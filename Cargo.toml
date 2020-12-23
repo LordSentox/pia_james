@@ -1,0 +1,13 @@
+[package]
+name = "play_it_again_james"
+version = "0.1.0"
+authors = ["Arne Dußin <arne.dussin@gmail.com>"]
+edition = "2018"
+description = "Connects to an mqtt server and sends signals to / receives signals from all other connected players at once."
+
+[dependencies]
+clap = "*"
+mpris = "*"
+pretty_env_logger = "*"
+log = "*"
+rumqttc = "*"
