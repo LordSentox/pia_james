@@ -1,13 +1,25 @@
 #[macro_use]
 extern crate log;
 
+pub mod net;
+pub mod player_cmd;
+
 pub const DEFAULT_PORT: u16 = 1883;
 
+use std::io::{self, Read};
 use clap::{App, Arg};
-use rumqttc::{MqttOptions, Client, QoS};
+use net::NetPlayerHandle;
+use player_cmd::PlayerCmd;
+use mpris::PlayerFinder;
 
 fn main() {
     pretty_env_logger::init();
+
+    let player_finder = PlayerFinder::new().expect("Unable to start player finder on DBUS");
+    println!("Possible player identities: ");
+    for player in player_finder.find_all().expect("Unable to list players") {
+        println!("{}", player.identity());
+    }
 
     let default_port_string = DEFAULT_PORT.to_string();
     let matches = App::new("Play it again, James")
@@ -36,7 +48,9 @@ fn main() {
             )
         .get_matches();
 
-    let player = matches.value_of("media_player").expect("No player specified");
+    let player = matches
+        .value_of("media_player")
+        .expect("No player specified");
     let channel = matches.value_of("name").unwrap_or(player);
 
     let server_address = matches
@@ -51,11 +65,20 @@ fn main() {
         }
     };
 
+    let player_handle = NetPlayerHandle::start(server_address, server_port, player, channel);
 
-    info!("Connecting to server {}:{}", &server_address, server_port);
-    let mut mqtt_options = MqttOptions::new(channel, server_address, server_port);
-    mqtt_options.set_keep_alive(5);
+    for c in io::stdin().lock().bytes() {
+        let c = c.expect("Unable to read character from console");
+        let cmd = match c as char {
+            'p' => PlayerCmd::PlayPause,
+            'r' => PlayerCmd::Play,
+            'b' => PlayerCmd::Pause,
+            '\n' => continue,
+            _ => { error!("`{}` is not a player command. Please use [p]laypause, [r]esume and [b]reak", c); continue; }
+        };
 
-    let (mut client, mut connection) = Client::new(mqtt_options, 10);
-    client.subscribe(channel, QoS::AtMostOnce).expect("Unable to subscribe to channel");
+        player_handle.send_command(cmd);
+    }
+
+    player_handle.join();
 }
