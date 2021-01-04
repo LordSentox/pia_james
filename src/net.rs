@@ -3,6 +3,7 @@ use rumqttc::{Client, Connection, Event, Incoming, MqttOptions, Publish, QoS};
 use std::convert::TryFrom;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
+use users::get_current_username;
 
 pub struct NetPlayerHandle {
     outgoing_tx: Sender<PlayerCmd>,
@@ -13,7 +14,15 @@ pub struct NetPlayerHandle {
 impl NetPlayerHandle {
     pub fn start(server_addr: &str, server_port: u16, name: &str, channel: &str) -> Self {
         info!("Connecting to server {}:{}", &server_addr, server_port);
-        let mut mqtt_options = MqttOptions::new(channel, server_addr, server_port);
+
+        // Generate a semi-random username from the system username and a random number.
+        let mut identity: String = get_current_username()
+            .expect("Unable to get username, was the user deleted since starting the program?")
+            .to_string_lossy()
+            .into_owned();
+        identity.push_str(&format!("{:08x}", rand::random::<u32>()));
+        info!("Using identity {}", &identity);
+        let mut mqtt_options = MqttOptions::new(&identity, server_addr, server_port);
         mqtt_options.set_keep_alive(5);
 
         let (mut client, connection) = Client::new(mqtt_options, 10);
@@ -33,12 +42,18 @@ impl NetPlayerHandle {
     }
 
     pub fn send_command(&self, cmd: PlayerCmd) {
-        self.outgoing_tx.send(cmd).expect("Unable to send command to command fifo");
+        self.outgoing_tx
+            .send(cmd)
+            .expect("Unable to send command to command fifo");
     }
 
     pub fn join(self) {
-        self.recv_thread_handle.join().expect("Could not join net receiver thread");
-        self.send_thread_handle.join().expect("Could not join net sender thread");
+        self.recv_thread_handle
+            .join()
+            .expect("Could not join net receiver thread");
+        self.send_thread_handle
+            .join()
+            .expect("Could not join net sender thread");
     }
 }
 
